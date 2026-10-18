@@ -1,0 +1,67 @@
+name: Build NaedalusX64 for PS2
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ps2:
+    name: Compile PS2 ELF
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Build with the PS2Dev toolchain
+        run: |
+          set -euo pipefail
+          docker pull ps2dev/ps2dev:latest
+          docker run --rm \
+            --volume "${GITHUB_WORKSPACE}:/work" \
+            --workdir /work/Source \
+            --entrypoint /bin/sh \
+            ps2dev/ps2dev:latest -ec '
+              apk add --no-cache make
+              echo "PS2DEV=${PS2DEV:-not-set}"
+              echo "PS2SDK=${PS2SDK:-not-set}"
+              command -v mips64r5900el-ps2-elf-gcc
+              mips64r5900el-ps2-elf-gcc --version
+              make -j2
+              test -s Daedalus.elf
+              echo "Build succeeded: Source/Daedalus.elf"
+            '
+
+      - name: Assemble a test package
+        run: |
+          set -euo pipefail
+          mkdir -p dist/NaedalusX64/Roms
+          mkdir -p dist/NaedalusX64/SaveGames
+          mkdir -p dist/NaedalusX64/SaveStates
+          cp Source/Daedalus.elf dist/NaedalusX64/
+          cp -a Data/. dist/NaedalusX64/
+          tar -czf dist/NaedalusX64-PS2-test.tar.gz -C dist NaedalusX64
+          test -s dist/NaedalusX64-PS2-test.tar.gz
+
+      - name: Upload raw ELF
+        uses: actions/upload-artifact@v4
+        with:
+          name: NaedalusX64-PS2-ELF
+          path: Source/Daedalus.elf
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: NaedalusX64-PS2-test-package
+          path: dist/NaedalusX64-PS2-test.tar.gz
+          if-no-files-found: error
+          retention-days: 14
